@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#0f172a" />
   <title>貨物パレット積付明細</title>
   <style>
@@ -12,6 +12,8 @@
       --line:#cbd5e1; --soft:#e2e8f0;
     }
     *{box-sizing:border-box}
+    button,.tab,.key,.chip{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+    html,body{overscroll-behavior:none}
     body{
       margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;
       background:var(--bg); color:var(--ink); min-height:100vh;
@@ -39,7 +41,8 @@
       font-size:30px;font-weight:900;text-align:center;letter-spacing:2px;background:#fff;
     }
     .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
-    .key{
+    .key{user-select:none;-webkit-user-select:none;
+      
       border:0;border-radius:16px;min-height:64px;font-size:25px;font-weight:900;
       background:#e2e8f0;color:var(--ink);box-shadow:0 3px 0 #cbd5e1;
     }
@@ -82,13 +85,15 @@
     @media print{
       body{background:white}
       .app,.footerbar{display:none!important}
-      .print-preview{display:block;padding:28px 34px;color:#000;font-family:"Yu Gothic","Noto Sans JP",sans-serif}
-      .print-preview h1{text-align:center;font-size:24px;margin-bottom:32px}
-      .print-preview h2{font-size:24px;margin:18px 0 28px}
-      .print-grid{font-size:20px;line-height:2}
+      .print-preview{display:block;padding:20px 26px;color:#000;font-family:"Yu Gothic","Noto Sans JP",sans-serif}
+      .print-preview>h1{text-align:center;font-size:24px;margin:0 0 24px}
+      .print-pallet{page-break-inside:avoid;border-top:2px solid #000;padding-top:18px;margin-top:18px}
+      .print-pallet:first-of-type{border-top:0;margin-top:0;padding-top:0}
+      .print-pallet h2{font-size:23px;margin:0 0 18px}
+      .print-grid{font-size:19px;line-height:1.9}
       .print-grid .label{display:inline-block;width:190px}
-      .print-nos{margin-top:24px;font-size:18px;line-height:1.8;word-break:break-all}
-      .print-nos strong{display:block;font-size:20px;margin-bottom:8px}
+      .print-nos{margin-top:18px;font-size:17px;line-height:1.8;word-break:break-all}
+      .print-nos strong{display:block;font-size:19px;margin-bottom:6px}
     }
   </style>
 </head>
@@ -158,15 +163,7 @@
 
   <section class="print-preview" id="printPreview">
     <h1>貨物パレット積付明細</h1>
-    <h2 id="printName">Aパレット</h2>
-    <div class="print-grid">
-      <div><span class="label">個数</span><strong id="printCount">0個</strong></div>
-      <div><span class="label">トータル重量</span><strong id="printWeight">0kg</strong></div>
-    </div>
-    <div class="print-nos">
-      <strong>積付貨物NO.</strong>
-      <span id="printNumbers">なし</span>
-    </div>
+    <div id="printPallets"></div>
   </section>
 
 <script>
@@ -188,7 +185,11 @@
   const message = $('#message');
 
   function active(){ return state.pallets.find(p=>p.id===state.activeId); }
-  function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  let saveTimer=null;
+  function save(){
+    clearTimeout(saveTimer);
+    saveTimer=setTimeout(()=>localStorage.setItem(STORAGE_KEY, JSON.stringify(state)),80);
+  }
   function showMessage(text, type='ok'){
     message.textContent = text; message.className = `message show ${type}`;
     clearTimeout(showMessage.t); showMessage.t = setTimeout(()=>message.className='message',1800);
@@ -218,17 +219,17 @@
     count.textContent=`${p.numbers.length}個`;
     weightInput.value=p.weight;
     weightDisplay.textContent=`${p.weight || 0}kg`;
-    numbers.innerHTML='';
-    [...p.numbers].sort((a,b)=>Number(a)-Number(b)).forEach(n=>{
+    numbers.replaceChildren();
+    const frag=document.createDocumentFragment();
+    const sorted=[...p.numbers].sort((a,b)=>Number(a)-Number(b));
+    sorted.forEach(n=>{
       const chip=document.createElement('button');
-      chip.className='chip'; chip.textContent=n;
-      chip.onclick=()=>{
-        if(confirm(`NO.${n}を削除しますか？`)){
-          p.numbers=p.numbers.filter(x=>x!==n);save();render();
-        }
-      };
-      numbers.appendChild(chip);
+      chip.className='chip';
+      chip.textContent=n;
+      chip.dataset.number=n;
+      frag.appendChild(chip);
     });
+    numbers.appendChild(frag);
     updatePrint();
   }
 
@@ -266,6 +267,28 @@
     save();weightDisplay.textContent=`${weightInput.value || 0}kg`;updatePrint();
   });
 
+  numbers.addEventListener('click',e=>{
+    const chip=e.target.closest('.chip');
+    if(!chip) return;
+    const n=chip.dataset.number;
+    if(confirm(`NO.${n}を削除しますか？`)){
+      const p=active();
+      p.numbers=p.numbers.filter(x=>x!==n);
+      save();
+      render();
+    }
+  });
+
+  let lastTouchEnd=0;
+  document.addEventListener('touchend',e=>{
+    const now=Date.now();
+    if(now-lastTouchEnd<=300 && e.target.closest('button')) e.preventDefault();
+    lastTouchEnd=now;
+  },{passive:false});
+  document.addEventListener('dblclick',e=>{
+    if(e.target.closest('button')) e.preventDefault();
+  },{passive:false});
+
   $('#undoBtn').onclick=()=>{
     const p=active(); if(!p.numbers.length) return showMessage('取消する番号がありません','err');
     const n=p.numbers.pop();save();render();showMessage(`NO.${n}を取り消しました`);
@@ -294,11 +317,33 @@
     return [...arr].sort((a,b)=>Number(a)-Number(b)).join('、') || 'なし';
   }
   function updatePrint(){
-    const p=active(); if(!p)return;
-    $('#printName').textContent=p.name;
-    $('#printCount').textContent=`${p.numbers.length}個`;
-    $('#printWeight').textContent=`${p.weight || 0}kg`;
-    $('#printNumbers').textContent=formatNumbers(p.numbers);
+    const wrap=$('#printPallets');
+    if(!wrap) return;
+    wrap.replaceChildren();
+    const frag=document.createDocumentFragment();
+    state.pallets.forEach(p=>{
+      const section=document.createElement('section');
+      section.className='print-pallet';
+      const title=document.createElement('h2');
+      title.textContent=p.name;
+      const grid=document.createElement('div');
+      grid.className='print-grid';
+      const countRow=document.createElement('div');
+      countRow.innerHTML=`<span class="label">個数</span><strong>${p.numbers.length}個</strong>`;
+      const weightRow=document.createElement('div');
+      weightRow.innerHTML=`<span class="label">トータル重量</span><strong>${p.weight || 0}kg</strong>`;
+      grid.append(countRow,weightRow);
+      const nos=document.createElement('div');
+      nos.className='print-nos';
+      const nosTitle=document.createElement('strong');
+      nosTitle.textContent='積付貨物NO.';
+      const nosText=document.createElement('span');
+      nosText.textContent=formatNumbers(p.numbers);
+      nos.append(nosTitle,nosText);
+      section.append(title,grid,nos);
+      frag.appendChild(section);
+    });
+    wrap.appendChild(frag);
   }
   function load(){
     try{return JSON.parse(localStorage.getItem(STORAGE_KEY));}catch(e){return null;}
